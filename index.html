@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>High-Performance Log Analytics Dashboard</title>
+    <!-- Chart.js via CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+            margin: 0;
+            padding: 2rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        h1 {
+            color: #38bdf8;
+            margin-bottom: 0.5rem;
+        }
+        p {
+            color: #94a3b8;
+            margin-bottom: 2rem;
+        }
+        .container {
+            width: 100%;
+            max-width: 800px;
+            background-color: #1e293b;
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+        }
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        .card {
+            background-color: #334155;
+            padding: 1.5rem;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .card h3 {
+            margin: 0;
+            font-size: 0.9rem;
+            color: #94a3b8;
+            text-transform: uppercase;
+        }
+        .card div {
+            font-size: 1.8rem;
+            font-weight: bold;
+            margin-top: 0.5rem;
+        }
+        .info-val { color: #38bdf8; }
+        .warning-val { color: #fbbf24; }
+        .error-val { color: #f87171; }
+    </style>
+</head>
+<body>
+
+    <h1>Log Engine Analytics</h1>
+    <p>Real-time metrics powered by C++ Multi-Threaded Memory Buffer Scanner</p>
+
+    <div class="container">
+        <div class="metrics-grid">
+            <div class="card">
+                <h3>INFO Logs</h3>
+                <div id="infoCount" class="info-val">0</div>
+            </div>
+            <div class="card">
+                <h3>WARNING Logs</h3>
+                <div id="warningCount" class="warning-val">0</div>
+            </div>
+            <div class="card">
+                <h3>ERROR Logs</h3>
+                <div id="errorCount" class="error-val">0</div>
+            </div>
+        </div>
+
+        <canvas id="logChart"></canvas>
+    </div>
+
+    <script>
+        let logChart;
+
+        async function fetchMetrics() {
+            try {
+                // Fetch JSON metrics from the C++ socket server endpoint
+                const response = await fetch('http://localhost:8080/api/metrics');
+                const data = await response.json();
+
+                // Update cards with numbers
+                document.getElementById('infoCount').innerText = data.info.toLocaleString();
+                document.getElementById('warningCount').innerText = data.warning.toLocaleString();
+                document.getElementById('errorCount').innerText = data.error.toLocaleString();
+
+                // Render or update Chart.js bar chart
+                if (!logChart) {
+                    const ctx = document.getElementById('logChart').getContext('2d');
+                    logChart = new Chart(ctx, {
+                        type: 'bar',
+                        data: {
+                            labels: ['INFO', 'WARNING', 'ERROR'],
+                            datasets: [{
+                                label: 'Log Count',
+                                data: [data.info, data.warning, data.error],
+                                backgroundColor: ['#38bdf8', '#fbbf24', '#f87171'],
+                                borderRadius: 6
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            plugins: {
+                                legend: { display: false }
+                            },
+                            scales: {
+                                y: {
+                                    ticks: { color: '#94a3b8' },
+                                    grid: { color: '#334155' }
+                                },
+                                x: {
+                                    ticks: { color: '#94a3b8' },
+                                    grid: { display: false }
+                                }
+                            }
+                        }
+                    });
+                }
+            } catch (err) {
+                console.error("Could not reach C++ Log Engine server:", err);
+            }
+        }
+
+        fetchMetrics();
+    </script>
+</body>
+</html>

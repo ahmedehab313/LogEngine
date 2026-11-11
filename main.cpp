@@ -75,20 +75,21 @@ void parseLogs() {
     for (auto& t : threads) t.join();
 }
 
-// 2. HTTP Server Listener (Winsock)
+// Read index.html content into string
+string loadHTMLFile() {
+    ifstream file("index.html");
+    if (!file.is_open()) return "<h1>Error loading index.html</h1>";
+    string content((istreambuf_iterator<char>(file)), istreambuf_iterator<char>());
+    return content;
+}
+
+// 2. Embedded HTTP Server
 void startHTTPServer() {
     WSADATA wsaData;
-    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-        cerr << "WSAStartup failed." << endl;
-        return;
-    }
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) return;
 
     SOCKET listenSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (listenSocket == INVALID_SOCKET) {
-        cerr << "Socket creation failed." << endl;
-        WSACleanup();
-        return;
-    }
+    if (listenSocket == INVALID_SOCKET) { WSACleanup(); return; }
 
     sockaddr_in serverAddr{};
     serverAddr.sin_family = AF_INET;
@@ -96,52 +97,57 @@ void startHTTPServer() {
     serverAddr.sin_port = htons(8080);
 
     if (bind(listenSocket, (sockaddr*)&serverAddr, sizeof(serverAddr)) == SOCKET_ERROR) {
-        cerr << "Bind failed." << endl;
-        closesocket(listenSocket);
-        WSACleanup();
-        return;
+        closesocket(listenSocket); WSACleanup(); return;
     }
 
     if (listen(listenSocket, SOMAXCONN) == SOCKET_ERROR) {
-        cerr << "Listen failed." << endl;
-        closesocket(listenSocket);
-        WSACleanup();
-        return;
+        closesocket(listenSocket); WSACleanup(); return;
     }
 
     cout << "\n=============================================" << endl;
-    cout << " C++ Log Engine Server Running!" << endl;
-    cout << " Open your browser to: http://localhost:8080" << endl;
-    cout << " Press Ctrl + C in terminal to stop." << endl;
+    cout << " C++ Dashboard Server Active!" << endl;
+    cout << " Open your browser: http://localhost:8080" << endl;
     cout << "=============================================\n" << endl;
+
+    string htmlContent = loadHTMLFile();
 
     while (true) {
         SOCKET clientSocket = accept(listenSocket, NULL, NULL);
         if (clientSocket == INVALID_SOCKET) continue;
 
-        // Read the incoming HTTP request header from the browser
-        char recvBuffer[1024];
+        char recvBuffer[2048];
         int bytesReceived = recv(clientSocket, recvBuffer, sizeof(recvBuffer) - 1, 0);
 
         if (bytesReceived > 0) {
             recvBuffer[bytesReceived] = '\0';
+            string requestStr(recvBuffer);
 
-            // Construct JSON response containing real log metrics
-            string jsonBody = "{\n"
-                              "  \"info\": " + to_string(logCounts["INFO"]) + ",\n"
-                              "  \"warning\": " + to_string(logCounts["WARNING"]) + ",\n"
-                              "  \"error\": " + to_string(logCounts["ERROR"]) + "\n"
-                              "}";
+            string httpResponse;
 
-            string httpResponse = "HTTP/1.1 200 OK\r\n"
-                                  "Content-Type: application/json\r\n"
-                                  "Access-Control-Allow-Origin: *\r\n"
-                                  "Content-Length: " + to_string(jsonBody.length()) + "\r\n"
-                                  "Connection: close\r\n\r\n" + jsonBody;
+            // Route: Return JSON metrics if API requested
+            if (requestStr.find("GET /api/metrics") != string::npos) {
+                string jsonBody = "{\n"
+                                  "  \"info\": " + to_string(logCounts["INFO"]) + ",\n"
+                                  "  \"warning\": " + to_string(logCounts["WARNING"]) + ",\n"
+                                  "  \"error\": " + to_string(logCounts["ERROR"]) + "\n"
+                                  "}";
+
+                httpResponse = "HTTP/1.1 200 OK\r\n"
+                               "Content-Type: application/json\r\n"
+                               "Access-Control-Allow-Origin: *\r\n"
+                               "Content-Length: " + to_string(jsonBody.length()) + "\r\n"
+                               "Connection: close\r\n\r\n" + jsonBody;
+            } 
+            // Route: Return visual HTML dashboard for root page
+            else {
+                htmlContent = loadHTMLFile(); // Refresh HTML on each reload
+                httpResponse = "HTTP/1.1 200 OK\r\n"
+                               "Content-Type: text/html\r\n"
+                               "Content-Length: " + to_string(htmlContent.length()) + "\r\n"
+                               "Connection: close\r\n\r\n" + htmlContent;
+            }
 
             send(clientSocket, httpResponse.c_str(), (int)httpResponse.length(), 0);
-            
-            // Gracefully shutdown send channel before closing
             shutdown(clientSocket, SD_SEND);
         }
 
@@ -154,17 +160,12 @@ void startHTTPServer() {
 
 int main() {
     auto startTime = chrono::high_resolution_clock::now();
-    
-    // Parse 500k logs
     parseLogs();
-
     auto endTime = chrono::high_resolution_clock::now();
     chrono::duration<double, milli> duration = endTime - startTime;
 
-    cout << "Engine parsed 500,000 logs in " << duration.count() << " ms." << endl;
+    cout << "Parsed 500,000 logs in " << duration.count() << " ms." << endl;
 
-    // Start listening on HTTP port 8080
     startHTTPServer();
-
     return 0;
 }
